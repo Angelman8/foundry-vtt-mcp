@@ -22,6 +22,8 @@ import { CompendiumTools } from './tools/compendium.js';
 
 import { SceneTools } from './tools/scene.js';
 import { PlaylistTools } from './tools/playlist.js';
+import { TimeloopTools } from './tools/timeloop.js';
+import { SceneUpdateTools } from './tools/scene-update.js';
 
 import { ActorCreationTools } from './tools/actor-creation.js';
 import { ActorManagementTools } from './tools/actor-management.js';
@@ -1196,6 +1198,8 @@ async function startBackend(): Promise<void> {
 
   const sceneTools = new SceneTools({ foundryClient, logger });
   const playlistTools = new PlaylistTools({ foundryClient, logger });
+  const timeloopTools = new TimeloopTools({ foundryClient, logger });
+  const sceneUpdateTools = new SceneUpdateTools({ foundryClient, logger });
 
   const actorCreationTools = new ActorCreationTools({ foundryClient, logger });
   const actorManagementTools = new ActorManagementTools({ foundryClient, logger, systemRegistry });
@@ -1459,6 +1463,9 @@ async function startBackend(): Promise<void> {
     ...mapGenerationTools.getToolDefinitions(),
 
     ...playlistTools.getToolDefinitions(),
+
+    ...timeloopTools.getToolDefinitions(),
+    ...sceneUpdateTools.getToolDefinitions(),
   ];
 
   // Start Foundry connector (owns app port 31415)
@@ -1802,6 +1809,61 @@ async function startBackend(): Promise<void> {
 
                 case 'update-scene-music':
                   result = await sceneTools.handleUpdateSceneMusic(args);
+
+                  break;
+
+                case 'update-scene':
+                  result = await sceneUpdateTools.handleUpdateScene(args);
+
+                  break;
+
+                case 'timeloop-get':
+                  result = await timeloopTools.handleGet(args);
+
+                  break;
+
+                case 'timeloop-create-path':
+                  result = await timeloopTools.handleCreatePath(args);
+
+                  break;
+
+                case 'timeloop-edit-path':
+                  result = await timeloopTools.handleEditPath(args);
+
+                  break;
+
+                case 'timeloop-add-change':
+                  result = await timeloopTools.handleAddChange(args);
+
+                  break;
+
+                case 'timeloop-edit-change':
+                  result = await timeloopTools.handleEditChange(args);
+
+                  break;
+
+                case 'timeloop-cue':
+                  result = await timeloopTools.handleCue(args);
+
+                  break;
+
+                case 'timeloop-presence':
+                  result = await timeloopTools.handlePresence(args);
+
+                  break;
+
+                case 'timeloop-clock':
+                  result = await timeloopTools.handleClock(args);
+
+                  break;
+
+                case 'timeloop-export':
+                  result = await timeloopTools.handleExport(args);
+
+                  break;
+
+                case 'timeloop-import':
+                  result = await timeloopTools.handleImport(args);
 
                   break;
 
