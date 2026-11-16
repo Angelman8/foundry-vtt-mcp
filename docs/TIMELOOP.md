@@ -41,7 +41,7 @@ Install, replacing the upstream bridge and server with the fork's:
 
 1. Move the installed bridge folder (`Data/modules/foundry-mcp-bridge`) somewhere safe.
 2. Junction or copy `packages/foundry-module` (with its built `dist/`, `module.json`, `lang`, `styles` and `templates`) to `Data/modules/foundry-mcp-bridge`.
-3. Point the MCP client's server entry at `packages/mcp-server/dist/index.bundle.cjs` (it starts `backend.bundle.cjs` next to it), started with the same `node`.
+3. Point the MCP client's server entry at `packages/mcp-server/dist/index.bundle.cjs` (it starts `backend.bundle.cjs` next to it), started with the same `node`. Claude Desktop rewrites its config on restart, so there it is simpler to copy `index.bundle.cjs` over the installed `index.cjs` and `index.bundle.cjs`, and `backend.bundle.cjs` over the installed one, then quit the app fully and stop leftover server processes.
 4. Do not run the upstream installer while using the fork; an upstream update would replace the junction.
 
 Reload Foundry afterwards. The existing tools keep working.
