@@ -222,6 +222,7 @@ describe('updateScene', () => {
     'drawings',
     'templates',
     'regions',
+    'levels',
     'tokens.0.x',
     '==walls',
     '-=tokens',
@@ -300,5 +301,117 @@ describe('updateScene', () => {
     await expect(
       updateScene({ scene_identifier: 'a', updates: { darkness: 1 } })
     ).rejects.toThrow(/prevented/);
+  });
+
+  describe('on a v14 scene with Levels', () => {
+    const makeLevel = (source: any = {}, update?: any, updateSource?: any) => ({
+      id: 'L1',
+      name: 'Ground',
+      updateSource: updateSource ?? dryRunDiff(source),
+      update: update ?? vi.fn().mockResolvedValue({}),
+    });
+    const withLevel = (scene: any, level: any) =>
+      Object.assign(scene, { levels: { size: 1 }, firstLevel: level });
+
+    it('writes background keys to the first Level and the rest to the scene', async () => {
+      const level = makeLevel({ background: { src: 'old.webp' } });
+      const scene = withLevel(makeScene('a', 'Inn'), level);
+      stubScenes([scene]);
+      const r: any = await updateScene({
+        scene_identifier: 'a',
+        updates: {
+          'background.src': 'maps/inn.webp',
+          'background.scaleX': 2,
+          'background.offsetX': 50,
+          backgroundColor: '#000000',
+          foreground: 'fg.webp',
+          'fog.overlay': 'fog.webp',
+          name: 'The Inn',
+        },
+      });
+      const levelChanges = {
+        background: { src: 'maps/inn.webp', color: '#000000' },
+        textures: { scaleX: 2 },
+        foreground: { src: 'fg.webp' },
+        fog: { src: 'fog.webp' },
+      };
+      expect(level.updateSource).toHaveBeenCalledWith(levelChanges, { dryRun: true, fallback: false });
+      expect(level.update).toHaveBeenCalledWith(levelChanges);
+      expect(scene.update).toHaveBeenCalledWith({ name: 'The Inn', shiftX: 50 });
+      expect(r.changed).toEqual({ name: 'The Inn', shiftX: 50 });
+      expect(r.level).toEqual({ id: 'L1', name: 'Ground', changed: levelChanges });
+    });
+
+    it('handles nested background objects', async () => {
+      const level = makeLevel();
+      const scene = withLevel(makeScene('a', 'Inn'), level);
+      stubScenes([scene]);
+      await updateScene({ scene_identifier: 'a', updates: { background: { src: 'x.webp', fit: 'cover' } } });
+      expect(level.update).toHaveBeenCalledWith({ background: { src: 'x.webp' }, textures: { fit: 'cover' } });
+      expect(scene.update).not.toHaveBeenCalled();
+    });
+
+    it('uses the map from BaseScene when Foundry has one', async () => {
+      vi.stubGlobal('foundry', {
+        documents: { BaseScene: { _LEVELS_PROPERTY_MAP: [['background.src', 'art.src']] } },
+      });
+      try {
+        const level = makeLevel();
+        const scene = withLevel(makeScene('a', 'Inn'), level);
+        stubScenes([scene]);
+        await updateScene({ scene_identifier: 'a', updates: { 'background.src': 'x.webp' } });
+        expect(level.update).toHaveBeenCalledWith({ art: { src: 'x.webp' } });
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it('does not write when neither document would change', async () => {
+      const level = makeLevel({ background: { src: 'same.webp' } });
+      const scene = withLevel(makeScene('a', 'Inn', { darkness: 0 }), level);
+      stubScenes([scene]);
+      const r: any = await updateScene({
+        scene_identifier: 'a',
+        updates: { 'background.src': 'same.webp', darkness: 0 },
+      });
+      expect(r.changed).toEqual({});
+      expect(r.level).toBeUndefined();
+      expect(level.update).not.toHaveBeenCalled();
+      expect(scene.update).not.toHaveBeenCalled();
+    });
+
+    it('validates both documents before writing either', async () => {
+      const level = makeLevel();
+      const scene = withLevel(
+        makeScene('a', 'Inn', {}, undefined, vi.fn(() => {
+          throw new Error('grid.size: must be an integer');
+        })),
+        level
+      );
+      stubScenes([scene]);
+      await expect(
+        updateScene({ scene_identifier: 'a', updates: { 'background.src': 'x.webp', 'grid.size': 'big' } })
+      ).rejects.toThrow('must be an integer');
+      expect(level.update).not.toHaveBeenCalled();
+    });
+
+    it('says what was written when the scene update is prevented after the Level update', async () => {
+      const level = makeLevel();
+      const scene = withLevel(makeScene('a', 'Inn', {}, vi.fn().mockResolvedValue(undefined)), level);
+      stubScenes([scene]);
+      await expect(
+        updateScene({ scene_identifier: 'a', updates: { 'background.src': 'x.webp', name: 'y' } })
+      ).rejects.toThrow(/Level changes were written/);
+    });
+
+    it('throws when the Level update is prevented', async () => {
+      const level = makeLevel({}, vi.fn().mockResolvedValue(undefined));
+      const scene = withLevel(makeScene('a', 'Inn'), level);
+      stubScenes([scene]);
+      await expect(
+        updateScene({ scene_identifier: 'a', updates: { 'background.src': 'x.webp', name: 'y' } })
+      ).rejects.toThrow(/Nothing was changed/);
+      expect(scene.update).not.toHaveBeenCalled();
+    });
   });
 });
