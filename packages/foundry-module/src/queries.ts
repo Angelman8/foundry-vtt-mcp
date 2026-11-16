@@ -2,6 +2,7 @@ import { MODULE_ID } from './constants.js';
 import { FoundryDataAccess } from './data-access.js';
 import { ComfyUIManager } from './comfyui-manager.js';
 import { guardQueryHandler } from './query-guard.js';
+import { callTimeloop, updateScene } from './timeloop-bridge.js';
 
 export class QueryHandlers {
   public dataAccess: FoundryDataAccess;
@@ -46,6 +47,8 @@ export class QueryHandlers {
     CONFIG.queries[`${modulePrefix}.list-scenes`] = this.handleListScenes.bind(this);
     CONFIG.queries[`${modulePrefix}.switch-scene`] = this.handleSwitchScene.bind(this);
     CONFIG.queries[`${modulePrefix}.update-scene-music`] = this.handleUpdateSceneMusic.bind(this);
+    CONFIG.queries[`${modulePrefix}.update-scene`] = this.handleUpdateScene.bind(this);
+    CONFIG.queries[`${modulePrefix}.timeloop`] = this.handleTimeloop.bind(this);
     CONFIG.queries[`${modulePrefix}.manage-playlists`] = this.handleManagePlaylists.bind(this);
     CONFIG.queries[`${modulePrefix}.control-playlist`] = this.handleControlPlaylist.bind(this);
 
@@ -1216,6 +1219,24 @@ export class QueryHandlers {
         `Failed to update scene music: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
+  }
+
+  private async handleUpdateScene(data: any): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) {
+      return { error: 'Access denied', success: false };
+    }
+    this.dataAccess.validateFoundryState();
+    return await updateScene(data);
+  }
+
+  private async handleTimeloop(data: any): Promise<any> {
+    const gmCheck = this.validateGMAccess();
+    if (!gmCheck.allowed) {
+      return { error: 'Access denied', success: false };
+    }
+    this.dataAccess.validateFoundryState();
+    return await callTimeloop(data);
   }
 
   private async handleManagePlaylists(data: any): Promise<any> {
