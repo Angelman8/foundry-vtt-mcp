@@ -21,7 +21,7 @@ export class SceneUpdateTools {
       {
         name: 'update-scene',
         description:
-          'Update fields of a scene, for example background.src, width, grid.size, darkness, name or navigation. Dot notation is allowed. Embedded documents (tokens, walls, lights, sounds, tiles, notes, drawings, templates, regions) are refused and have their own tools, as are _id, _stats, folder, ownership and flags.core.',
+          'Update fields of a scene, for example background.src, width, grid.size, darkness, name or navigation. Dot notation is allowed. On Foundry v14, where the background lives on the scene\'s Levels, background.*, backgroundColor, foreground, foregroundElevation and fog.overlay are written to the first Level, and the result reports those under level. Embedded documents (tokens, walls, lights, sounds, tiles, notes, drawings, templates, regions, levels) are refused and have their own tools, as are _id, _stats, folder, ownership and flags.core.',
         inputSchema: {
           type: 'object',
           properties: {

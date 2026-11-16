@@ -118,7 +118,40 @@ const REFUSED_KEYS = new Set([
   'drawings',
   'templates',
   'regions',
+  'levels',
 ]);
+
+/**
+ * Foundry v14 moved a scene's background, foreground and fog image onto its Levels; `Scene#background` is a
+ * read-only shim over the first Level, so writes to these keys are dropped. Pairs of [scene key, first-Level key],
+ * as in v14's `BaseScene._LEVELS_PROPERTY_MAP` (used when present).
+ */
+const LEVEL_KEYS_FALLBACK: readonly (readonly [string, string])[] = [
+  ['background.src', 'background.src'],
+  ['background.tint', 'background.tint'],
+  ['background.alphaThreshold', 'background.alphaThreshold'],
+  ['background.anchorX', 'textures.anchorX'],
+  ['background.anchorY', 'textures.anchorY'],
+  ['background.fit', 'textures.fit'],
+  ['background.scaleX', 'textures.scaleX'],
+  ['background.scaleY', 'textures.scaleY'],
+  ['background.rotation', 'textures.rotation'],
+  ['fog.overlay', 'fog.src'],
+  ['foreground', 'foreground.src'],
+  ['foregroundElevation', 'elevation.top'],
+  ['backgroundColor', 'background.color'],
+];
+
+/** The v14 shim also maps background offsets to the scene's own shift fields. */
+const SCENE_RENAMES: readonly (readonly [string, string])[] = [
+  ['background.offsetX', 'shiftX'],
+  ['background.offsetY', 'shiftY'],
+];
+
+function levelKeyMap(): readonly (readonly [string, string])[] {
+  const map = (globalThis as any).foundry?.documents?.BaseScene?._LEVELS_PROPERTY_MAP;
+  return Array.isArray(map) && map.length > 0 ? map : LEVEL_KEYS_FALLBACK;
+}
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -165,6 +198,63 @@ function expand(updates: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
+/** Remove the value at `parts` from `obj`, pruning parents left empty. */
+function take(obj: Record<string, unknown>, parts: string[]): { found: boolean; value?: unknown } {
+  const [head, ...rest] = parts as [string, ...string[]];
+  if (!(head in obj)) return { found: false };
+  if (rest.length === 0) {
+    const value = obj[head];
+    delete obj[head];
+    return { found: true, value };
+  }
+  const child = obj[head];
+  if (!isPlainObject(child)) return { found: false };
+  const result = take(child, rest);
+  if (result.found && Object.keys(child).length === 0) delete obj[head];
+  return result;
+}
+
+function put(obj: Record<string, unknown>, parts: string[], value: unknown): void {
+  let cur = obj;
+  for (const part of parts.slice(0, -1)) {
+    if (!isPlainObject(cur[part])) cur[part] = {};
+    cur = cur[part] as Record<string, unknown>;
+  }
+  cur[parts[parts.length - 1] as string] = value;
+}
+
+/**
+ * Split expanded scene changes into the scene's own and its first Level's (v14). On a scene without Levels
+ * (before v14) everything stays on the scene.
+ */
+function splitLevelChanges(
+  scene: any,
+  changes: Record<string, unknown>
+): { level: any; levelChanges: Record<string, unknown> } {
+  const levelChanges: Record<string, unknown> = {};
+  const level = scene.levels?.size ? scene.firstLevel : null;
+  if (!level) return { level: null, levelChanges };
+  for (const [sceneKey, levelKey] of levelKeyMap()) {
+    const t = take(changes, sceneKey.split('.'));
+    if (t.found) put(levelChanges, levelKey.split('.'), t.value);
+  }
+  for (const [oldKey, newKey] of SCENE_RENAMES) {
+    const t = take(changes, oldKey.split('.'));
+    if (t.found) put(changes, newKey.split('.'), t.value);
+  }
+  return { level, levelChanges };
+}
+
+function dryRun(doc: any, changes: Record<string, unknown>): Record<string, unknown> {
+  if (Object.keys(changes).length === 0) return {};
+  const diff: Record<string, unknown> =
+    doc.updateSource(JSON.parse(JSON.stringify(changes)), { dryRun: true, fallback: false }) ?? {};
+  delete diff._id;
+  return diff;
+}
+
+const PREVENTED = 'The scene update was prevented (a module or hook refused it).';
+
 export async function updateScene(payload: {
   scene_identifier: string;
   updates: Record<string, unknown>;
@@ -204,18 +294,29 @@ export async function updateScene(payload: {
     );
   }
 
-  // The same dry run Foundry's client backend does before writing: it throws a readable error for invalid data
-  // (which scene.update would only show as a notification) and gives the diff the update resolves to.
   const changes = expand(JSON.parse(JSON.stringify(updates)));
-  const diff: Record<string, unknown> =
-    scene.updateSource(changes, { dryRun: true, fallback: false }) ?? {};
-  delete diff._id;
-  if (Object.keys(diff).length === 0) {
-    return { success: true, sceneId: scene.id, sceneName: scene.name, changed: {} };
+  const { level, levelChanges } = splitLevelChanges(scene, changes);
+
+  // The same dry run Foundry's client backend does before writing: it throws a readable error for invalid data
+  // (which update() would only show as a notification) and gives the diff the update resolves to. Both dry runs
+  // happen before either write.
+  const diff = dryRun(scene, changes);
+  const levelDiff = level ? dryRun(level, levelChanges) : {};
+  const result: Record<string, unknown> = { success: true, sceneId: scene.id, sceneName: scene.name };
+
+  if (Object.keys(levelDiff).length > 0) {
+    const updated = await level.update(JSON.parse(JSON.stringify(levelChanges)));
+    if (updated === undefined) throw new Error(`${PREVENTED} Nothing was changed.`);
+    result.level = { id: level.id, name: level.name, changed: jsonSafe(levelDiff) };
   }
-  const updated = await scene.update(expand(updates));
-  if (updated === undefined) {
-    throw new Error('The scene update was prevented (a module or hook refused it). Nothing was changed.');
+  if (Object.keys(diff).length > 0) {
+    const updated = await scene.update(JSON.parse(JSON.stringify(changes)));
+    if (updated === undefined) {
+      throw new Error(
+        result.level ? `${PREVENTED} The Level changes were written, the scene's were not.` : `${PREVENTED} Nothing was changed.`
+      );
+    }
   }
-  return { success: true, sceneId: scene.id, sceneName: scene.name, changed: jsonSafe(diff) };
+  result.changed = jsonSafe(diff);
+  return result;
 }
