@@ -240,7 +240,7 @@ export class TimeloopTools {
       },
       {
         name: 'timeloop-edit-path',
-        description: `Rename or delete a Timeloop path. ${SCENE_NOTE} ${REFERENCES_NOTE}`,
+        description: `Rename or delete a Timeloop path. Deleting a token's path also removes that token from the scene and from the start-of-day baseline, unless another path still uses it or a player owns it. ${SCENE_NOTE} ${REFERENCES_NOTE}`,
         inputSchema: {
           type: 'object',
           properties: {
